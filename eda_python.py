@@ -1,41 +1,25 @@
 # This script performs some basic exploratory data analysis
 
 ########################## Import utilities
-import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
 from sklearn.impute import KNNImputer
 from sklearn.preprocessing import LabelEncoder
 from sklearn.manifold import MDS
-import gower  # For Gower distance calculation
+import gower
 
 # Import utility functions from setup_script.py
-from setup_script import compute_area, make_transparent, summary_stats, rf_var_selection
+from setup_script import summary_stats
 
 ########################## Load data
-# In Python we'd use a different approach to load data
-# Assuming the data is in a pickle or CSV format
-# Replace with actual path to your data
 
-# Set working directory to script location (similar to setwd in R)
-# os.chdir(os.path.dirname(os.path.abspath(__file__)))  # Uncomment if needed
-
-# Load data (replace with your actual loading method)
-# In R, the load function loads an .Rda file which contains R objects
-# In Python, we typically use pickle or CSV files
-try:
-    app_data = pd.read_pickle("app_data_clean.pkl")  # If saved as pickle
-except FileNotFoundError:
-    try:
-        app_data = pd.read_csv("app_data.csv")  # If saved as CSV
-    except FileNotFoundError:
-        print("Data file not found. Please ensure data is available.")
-
+app_data = pd.read_csv("app_data.csv")
+    
 ########################## Summary statistics
-print(app_data.info())  # Similar to str(app.data)
-print(app_data.describe())  # Similar to summary(app.data)
+
+print(app_data.info())  
+print(app_data.describe())  
 
 ########################## Summary statistics for the paper
 # Full set of variables used in analysis
@@ -53,7 +37,7 @@ vars_incl = ["DiagnosisByCriteria", "TreatmentGroupBinar", "AppendicitisComplica
             "Meteorism", "Enteritis"]
 
 # Filter data where DiagnosisByCriteria is not NA
-app_data_full = app_data.loc[~app_data["DiagnosisByCriteria"].isna(), vars_incl]
+app_data_full = app_data.dropna(subset=['DiagnosisByCriteria'])[vars_incl]
 
 # Disease analysis
 app_data_dis = app_data_full.drop(columns=["TreatmentGroupBinar", "AppendicitisComplications"])
@@ -69,7 +53,6 @@ s_dis = summary_stats(
     seed=1799
 )
 print("P-values for disease comparison:")
-print(s_dis['pvals'])
 
 # Treatment analysis
 app_data_trt = app_data_full.drop(columns=["DiagnosisByCriteria", "AppendicitisComplications"])
@@ -85,7 +68,6 @@ s_trt = summary_stats(
     seed=1799
 )
 print("P-values for treatment comparison:")
-print(s_trt['pvals'])
 
 # Complications analysis
 app_data_comp = app_data_full.drop(columns=["DiagnosisByCriteria", "TreatmentGroupBinar"])
@@ -100,10 +82,21 @@ s_comp = summary_stats(
     y=app_data_comp["AppendicitisComplications"],
     seed=1799
 )
-print("P-values for complications comparison:")
-print(s_comp['pvals'])
+
+# Combine p-values from all analyses into a DataFrame
+
+print("P-values for targets:")
+p_values_df = pd.DataFrame({
+    'diagnosis': s_dis['pvals'],
+    'treatment': s_trt['pvals'],
+    'complications': s_comp['pvals']
+}).round(4)
+
+print("\nP-values for all comparisons:")
+print(p_values_df)
 
 ########################## Percentages of missing values
+
 # Calculate percentage of missing values for each column
 na_percs = app_data.isna().mean() * 100
 
@@ -115,31 +108,19 @@ plt.ylim(0, 100)
 plt.ylabel("Percentage of Missing Values, %")
 plt.axhline(y=100, linestyle='--', color='red')
 plt.tight_layout()
-plt.savefig("missing_values.png")
+plt.savefig("./Eda_plots/missing_values.png")
 plt.close()
 
-########################## Response variables
+########################## Target Variables
 
 # Treatment group: conservative therapy vs surgical
-plt.figure(figsize=(10, 6))
-app_data["TreatmentGroupBinar"].value_counts().plot(kind='bar')
-plt.title("Treatment Groups")
-plt.tight_layout()
-plt.savefig("treatment_groups.png")
-plt.close()
-
-# Create a binarized version of treatment group
-# Assuming TreatmentGroup is already in app_data
-app_data["TreatmentGroupBinar"] = app_data["TreatmentGroupBinar"].astype(str)
-app_data.loc[app_data["TreatmentGroupBinar"].isin(["primarySurgical", "secondarySurgical"]), "TreatmentGroupBinar"] = "surgical"
-app_data["TreatmentGroupBinar"] = app_data["TreatmentGroupBinar"].astype('category')
 
 plt.figure(figsize=(8, 6))
 app_data["TreatmentGroupBinar"].value_counts().plot(kind='bar')
 plt.title("Treatment (Binarized)")
 plt.xlabel("Treatment")
 plt.tight_layout()
-plt.savefig("treatment_binarized.png")
+plt.savefig("./Eda_plots/treatment_binarized.png")
 plt.close()
 
 print(app_data["TreatmentGroupBinar"].value_counts())
@@ -150,26 +131,19 @@ app_data["AppendicitisComplications"].value_counts().plot(kind='bar')
 plt.title("Appendicitis Complications")
 plt.xlabel("Complications?")
 plt.tight_layout()
-plt.savefig("complications.png")
+plt.savefig("./Eda_plots/complications.png")
 plt.close()
 
 print(app_data["AppendicitisComplications"].value_counts())
 
 # Diagnosis: appendicitis vs. no appendicitis?
-# Convert to human-readable format similar to R's factor
-diagnosis_counts = app_data["DiagnosisByCriteria"].map({
-    1: "appendicitis", 
-    2: "no appendicitis",
-    "appendicitis": "appendicitis", 
-    "noAppendicitis": "no appendicitis"
-}).value_counts()
 
 plt.figure(figsize=(8, 6))
-diagnosis_counts.plot(kind='bar')
-plt.title("Diagnosis (According to Criteria)")
+app_data["DiagnosisByCriteria"].value_counts().plot(kind='bar')
+plt.title("Diagnosis")
 plt.xlabel("Diagnosis")
 plt.tight_layout()
-plt.savefig("diagnosis.png")
+plt.savefig("./Eda_plots/diagnosis.png")
 plt.close()
 
 print(app_data["DiagnosisByCriteria"].value_counts())
@@ -188,46 +162,56 @@ vars_incl = ["Age", "BMI", "Sex", "Height", "Weight",
             "MesentricLymphadenitis", "BowelWallThick", "Ileus", "FecalImpaction",
             "Meteorism", "Enteritis", "AppendicitisComplications"]
 
-# Filter data and handle missing values
+# Filter data and handle missing values using kNN
 app_data_imputed = app_data[~app_data["DiagnosisByCriteria"].isna()].copy()
 
-# Impute missing values using KNN
-# First, prepare data for imputation
 numeric_cols = app_data_imputed.select_dtypes(include=['number']).columns
 categorical_cols = app_data_imputed.select_dtypes(exclude=['number']).columns
 
-# Handle numeric columns with KNN imputation
+# For Numerical cols
 imputer = KNNImputer(n_neighbors=5)
-if len(numeric_cols) > 0:
-    app_data_imputed[numeric_cols] = imputer.fit_transform(app_data_imputed[numeric_cols])
+app_data_imputed[numeric_cols] = imputer.fit_transform(app_data_imputed[numeric_cols])
 
-# Handle categorical columns with mode imputation
+# For categorical col
+# Categorical -> Numerical using Label Encoder
+le_dict = {}
 for col in categorical_cols:
-    mode_val = app_data_imputed[col].mode()[0]
-    app_data_imputed[col].fillna(mode_val, inplace=True)
+    le = LabelEncoder()
+    non_null_mask = ~app_data_imputed[col].isna()
+    le_dict[col] = le
+    app_data_imputed.loc[non_null_mask, col] = le.fit_transform(app_data_imputed.loc[non_null_mask, col])
+    app_data_imputed[col] = app_data_imputed[col].astype(float)
 
-# Compute Gower's distances (equivalent to daisy in R)
+# kNN on Numerical data
+imputer = KNNImputer(n_neighbors=5)
+app_data_imputed[categorical_cols] = imputer.fit_transform(app_data_imputed[categorical_cols])
+
+# Numerical -> Categorical
+for col in categorical_cols:
+    app_data_imputed[col] = np.round(app_data_imputed[col]).astype(int)
+    app_data_imputed[col] = le_dict[col].inverse_transform(app_data_imputed[col])
+
+# Compute Gower's distance
 # First encode categorical variables
 data_for_gower = app_data_imputed.copy()
-for col in data_for_gower.select_dtypes(include=['category', 'object']).columns:
+for col in data_for_gower.select_dtypes(exclude=['number']).columns:
     data_for_gower[col] = LabelEncoder().fit_transform(data_for_gower[col])
 
 # Calculate Gower distance matrix
 gower_dist_matrix = gower.gower_matrix(data_for_gower)
 
-# Perform MDS (equivalent to cmdscale in R)
+# Perform MDS
 mds = MDS(n_components=2, dissimilarity='precomputed', random_state=1799)
 mds_fit = mds.fit_transform(gower_dist_matrix)
 
 # Plot by diagnosis
 plt.figure(figsize=(10, 8))
-diagnosis_values = app_data["DiagnosisByCriteria"][~app_data["DiagnosisByCriteria"].isna()]
+diagnosis_values = app_data_imputed["DiagnosisByCriteria"]
 
 # Create a mask for each diagnosis group
 mask_appendicitis = np.array(diagnosis_values == "appendicitis")
 mask_no_appendicitis = np.array(diagnosis_values == "noAppendicitis")
 
-# Plot points by diagnosis
 plt.scatter(mds_fit[mask_appendicitis, 0], mds_fit[mask_appendicitis, 1], 
            color='orange', s=30, alpha=0.75, label='Appendicitis')
 plt.scatter(mds_fit[mask_no_appendicitis, 0], mds_fit[mask_no_appendicitis, 1], 
@@ -238,12 +222,12 @@ plt.ylabel('Dimension 2')
 plt.legend(title='Diagnosis according to criteria:')
 plt.title('MDS Plot by Diagnosis')
 plt.tight_layout()
-plt.savefig("mds_diagnosis.png")
+plt.savefig("./Eda_plots/mds_diagnosis.png")
 plt.close()
 
 # Plot by treatment among appendicitis patients
 plt.figure(figsize=(10, 8))
-treatment_values = app_data["TreatmentGroupBinar"][~app_data["DiagnosisByCriteria"].isna()]
+treatment_values = app_data_imputed["TreatmentGroupBinar"]
 
 # Create a mask for each treatment group
 mask_conservative = np.array(treatment_values == "conservative")
@@ -260,12 +244,12 @@ plt.ylabel('Dimension 2')
 plt.legend(title='Treatment:')
 plt.title('MDS Plot by Treatment')
 plt.tight_layout()
-plt.savefig("mds_treatment.png")
+plt.savefig("./Eda_plots/mds_treatment.png")
 plt.close()
 
 # Plot by complications among appendicitis patients
 plt.figure(figsize=(10, 8))
-complication_values = app_data["AppendicitisComplications"][~app_data["DiagnosisByCriteria"].isna()]
+complication_values = app_data_imputed["AppendicitisComplications"]
 
 # Create a mask for each complication group
 mask_no_complications = np.array(complication_values == "no")
@@ -282,7 +266,7 @@ plt.ylabel('Dimension 2')
 plt.legend(title='Complicated appendicitis:')
 plt.title('MDS Plot by Complications')
 plt.tight_layout()
-plt.savefig("mds_complications.png")
+plt.savefig("./Eda_plots/mds_complications.png")
 plt.close()
 
 print("Analysis complete. Plots saved as PNG files.")
